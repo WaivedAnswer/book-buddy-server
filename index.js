@@ -1,6 +1,16 @@
- const OpenAI = require("openai");
+const OpenAI = require("openai");
 
-exports.handler = async (event) => {
+exports.handler = awslambda.streamifyResponse( async (event, responseStream, _context) => {
+    // Metadata is a JSON serializable JS object. Its shape is not defined here.
+    const metadata = {
+            statusCode: 200,
+            headers: {
+                "Content-Type": "text/html",
+                "Access-Control-Allow-Credentials": true
+            }};
+
+    // Assign to the responseStream parameter to prevent accidental reuse of the non-wrapped stream.
+    responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
     const functionName = "create_book_recommendation";
     const STRING_TYPE = "string";
     const OBJECT_TYPE = "object"
@@ -23,13 +33,11 @@ exports.handler = async (event) => {
                         author: {
                             type: STRING_TYPE,
                             description: "Book Author"
-                        },
-                        reason: {
-                            type: "string",
-                            description: "Sales pitch to the user on the most valuable things they will get from the book."
-                        } 
+                        }
                     },
-                    required: ["title", "author", "reason"]
+                    required: ["title", 
+                    "author", 
+                ]
                     }
                 }
             }
@@ -37,32 +45,33 @@ exports.handler = async (event) => {
     }]
     const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY});
 
-    const lookingFor = event.lookingFor
-    console.log(event, lookingFor)
-    const chatResponse = await openai.chat.completions.create({
+    const body = JSON.parse(event.body)
+    let lookingFor = body.lookingFor
+    if(!lookingFor) {
+        //TODO error checking instead
+        lookingFor = "I am looking for great books"
+    }
+    const chatStream = await openai.chat.completions.create({
             model: "gpt-4-1106-preview",
             messages: [
                 {role: "system", "content": "You give great book recommendations. Limit to top 5 responses."},
                 {role: "user", "content": lookingFor},
             ],
             functions: functions,
-            function_call: {name: functionName}
+            function_call: {name: functionName},
+            stream: true
         });
 
-    const bookRecommendationCall = chatResponse.choices[0].message.function_call
-    if(!bookRecommendationCall || bookRecommendationCall.name !== functionName) {
-        return []
-    }
-
-    const recommendations = JSON.parse(bookRecommendationCall.arguments)
-
-    const response = {
-        statusCode: 200,
-        headers: {
-            "Access-Control-Allow-Origin": "*", // Allows access from any origin
-            "Access-Control-Allow-Credentials": true
-        },
-        body: JSON.stringify({results: recommendations.results})
-    }
-    return response
-};
+        for await (const chunk of chatStream) {
+            const delta = chunk.choices[0]?.delta?.function_call?.arguments
+            const finish_reason = chunk.choices[0]?.finish_reason
+            if(finish_reason && finish_reason !== 'stop') {
+                console.error(`Error: ${finish_reason}`)
+                break;
+            }
+            if(delta) {
+                responseStream.write(delta)
+            }
+        }
+    responseStream.end();
+});
