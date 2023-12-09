@@ -1,14 +1,41 @@
 const OpenAI = require("openai");
 
-exports.handler = awslambda.streamifyResponse( async (event, responseStream, _context) => {
-    // Metadata is a JSON serializable JS object. Its shape is not defined here.
-    const metadata = {
-            statusCode: 200,
-            headers: {
-                "Content-Type": "text/html",
-                "Access-Control-Allow-Credentials": true
-            }};
+const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY});
 
+async function passesModeration(lookingFor) {
+    let input = lookingFor
+    const moderation = await openai.moderations.create({ input: input });
+    if(moderation.results.length !==0 && moderation.results[0].flagged) {
+        console.log("Failed moderation")
+        return false
+    } 
+    return true
+}
+
+function getMetaData(statusCode) {
+    return {
+        statusCode: statusCode,
+        headers: {
+            "Content-Type": "text/html",
+            "Access-Control-Allow-Credentials": true
+        }
+    }
+}
+
+exports.handler = awslambda.streamifyResponse( async (event, responseStream, _context) => {
+    const body = JSON.parse(event.body)
+    let lookingFor = body.lookingFor
+    //TODO lookingFor error handling
+    const passed = await passesModeration(lookingFor)
+    if ( !passed) {
+        responseStream.write(JSON.stringify({
+            error: "MODERATION"
+        }))
+        responseStream.end()
+        return
+    }
+    // Metadata is a JSON serializable JS object. Its shape is not defined here.
+    const metadata = getMetaData(200);
     // Assign to the responseStream parameter to prevent accidental reuse of the non-wrapped stream.
     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
     const functionName = "create_book_recommendation";
@@ -43,14 +70,7 @@ exports.handler = awslambda.streamifyResponse( async (event, responseStream, _co
             }
         }
     }]
-    const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY});
 
-    const body = JSON.parse(event.body)
-    let lookingFor = body.lookingFor
-    if(!lookingFor) {
-        //TODO error checking instead
-        lookingFor = "I am looking for great books"
-    }
     const chatStream = await openai.chat.completions.create({
             model: "gpt-4-1106-preview",
             messages: [
