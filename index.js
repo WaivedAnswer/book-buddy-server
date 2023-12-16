@@ -38,13 +38,13 @@ exports.handler = awslambda.streamifyResponse( async (event, responseStream, _co
     const metadata = getMetaData(200);
     // Assign to the responseStream parameter to prevent accidental reuse of the non-wrapped stream.
     responseStream = awslambda.HttpResponseStream.from(responseStream, metadata);
-    const functionName = "create_book_recommendation";
+    const functionName = "display_book_recommendation";
     const STRING_TYPE = "string";
     const OBJECT_TYPE = "object"
     const ARRAY_TYPE = "array"
     const functions = [ {
         name: functionName,
-        description: "Creates personalized book recommendation",
+        description: "Displays book recommendation",
         parameters: {
             type: OBJECT_TYPE,
             properties: {
@@ -74,8 +74,8 @@ exports.handler = awslambda.streamifyResponse( async (event, responseStream, _co
     const chatStream = await openai.chat.completions.create({
             model: "gpt-4-1106-preview",
             messages: [
-                {role: "system", "content": "You give great book recommendations. Limit to top 5 responses."},
-                {role: "user", "content": lookingFor},
+                {role: "system", "content": "Act as an expert librarian, tailoring book recommendations to user preferences without spoilers. Focus on understanding and matching the user's reading tastes, and ensure suggestions are personalized and engaging. Limit to top 5 responses."},
+                {role: "user", "content": "The user's search was: " + lookingFor},
             ],
             functions: functions,
             function_call: {name: functionName},

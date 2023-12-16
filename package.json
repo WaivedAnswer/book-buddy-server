@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "lambda": "npm install --omit=dev && rm -f function.zip && zip -r function.zip . -x './.git/*' -x './examples/*'",
+    "lambda-package": "npm install --omit=dev && rm -f function.zip && zip -r function.zip . -x './.git/*' -x './examples/*'",
+    "lambda-upload": "aws lambda update-function-code --function-name findmyread-stream --zip-file fileb://function.zip --profile my-dev-profile",
+    "lambda": " npm run lambda-package && npm run lambda-upload",
     "test-lambda": "npm install && lambda-local -l index.js -h handler -t 29 -e 'examples/basic.js'"
   },
   "keywords": [],
