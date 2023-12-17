@@ -22,18 +22,30 @@ function getMetaData(statusCode) {
     }
 }
 
+function logError(error) {
+    console.error(JSON.stringify({
+        error: error.message,
+        stackTrace: error.stackTrace
+    }))
+}
+
 exports.handler = awslambda.streamifyResponse( async (event, responseStream, _context) => {
     const body = JSON.parse(event.body)
     let lookingFor = body.lookingFor
-    //TODO lookingFor error handling
-    const passed = await passesModeration(lookingFor)
-    if ( !passed) {
-        responseStream.write(JSON.stringify({
-            error: "MODERATION"
-        }))
-        responseStream.end()
-        return
+
+    try {
+        const passed = await passesModeration(lookingFor)
+        if ( !passed) {
+            responseStream.write(getErrorResponse("MODERATION"))
+            responseStream.end()
+            return
+        }
+    } catch(error) {
+        logError(error)
+        responseStream.write(getErrorResponse("OPEN_AI"))
     }
+    
+
     // Metadata is a JSON serializable JS object. Its shape is not defined here.
     const metadata = getMetaData(200);
     // Assign to the responseStream parameter to prevent accidental reuse of the non-wrapped stream.
@@ -71,7 +83,9 @@ exports.handler = awslambda.streamifyResponse( async (event, responseStream, _co
         }
     }]
 
-    const chatStream = await openai.chat.completions.create({
+    try {
+        console.log("Search:" + lookingFor)
+        const chatStream = await openai.chat.completions.create({
             model: "gpt-4-1106-preview",
             messages: [
                 {role: "system", "content": "Act as an expert librarian, tailoring book recommendations to user preferences without spoilers. Focus on understanding and matching the user's reading tastes, and ensure suggestions are personalized and engaging. Limit to top 5 responses."},
@@ -86,12 +100,24 @@ exports.handler = awslambda.streamifyResponse( async (event, responseStream, _co
             const delta = chunk.choices[0]?.delta?.function_call?.arguments
             const finish_reason = chunk.choices[0]?.finish_reason
             if(finish_reason && finish_reason !== 'stop') {
-                console.error(`Error: ${finish_reason}`)
+                logError(new Error(`Error: ${finish_reason}`))
                 break;
             }
             if(delta) {
                 responseStream.write(delta)
             }
         }
-    responseStream.end();
+    } catch (error) {
+        logError(error)
+        responseStream.write(getErrorResponse("STREAM_FAILURE"))
+    } finally {
+        responseStream.end();
+    }
+
 });
+
+function getErrorResponse(errorType) {
+    return JSON.stringify({
+        error: errorType
+    });
+}
