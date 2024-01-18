@@ -83,12 +83,13 @@ exports.handler = awslambda.streamifyResponse( async (event, responseStream, _co
         }
     }]
 
+    console.log("Updated 2")
     try {
         console.log("Search:" + lookingFor)
         const chatStream = await openai.chat.completions.create({
             model: "gpt-4-1106-preview",
             messages: [
-                {role: "system", "content": "Act as an expert librarian, tailoring book recommendations to user preferences without spoilers. Focus on understanding and matching the user's reading tastes, and ensure suggestions are personalized and engaging. Limit to top 5 responses."},
+                {role: "system", "content": "Act as an expert librarian, tailoring book recommendations to user preferences without spoilers. Be forgiving with typos and misunderstandings. Focus on understanding the user's search intent and matching the user's reading tastes. When users request authors similar to a specific writer, suggest comparable authors, excluding the mentioned one. When users request books similar to a specific book, suggest other books with similar elements. For genre-based queries, recommend top books within that genre. Limit to top 5 responses."},
                 {role: "user", "content": "The user's search was: " + lookingFor},
             ],
             functions: functions,
